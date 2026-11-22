@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>Admin | Personal Digital Identity</title>
+<style>
+:root{--bg:#f5f7fb;--panel:#fff;--ink:#0b1f3a;--muted:#55627a;--line:#d8dfeb;--accent:#2563eb;--danger:#c2410c}
+@media(prefers-color-scheme:dark){:root{--bg:#0a1226;--panel:#101a33;--ink:#e6ecf7;--muted:#97a5c0;--line:#243357;--accent:#6ea8ff;--danger:#fb923c}}
+*{box-sizing:border-box;margin:0}body{background:var(--bg);color:var(--ink);font:400 .96rem/1.55 system-ui,'Segoe UI',Arial,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:1rem}h1{font-size:1.3rem}h2{font-size:1.05rem;margin:1.2rem 0 .5rem}
+.top{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;justify-content:space-between;margin-bottom:1rem}
+button,.b{font:600 .88rem inherit;font-family:inherit;padding:.5rem .9rem;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer}
+button.p{background:var(--accent);border-color:var(--accent);color:#fff}button.d{color:var(--danger)}button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
+.tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}.note{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:.7rem .9rem;color:var(--muted);margin-bottom:1rem;font-size:.9rem}
+input,select,textarea{width:100%;font:inherit;padding:.5rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}textarea{min-height:5rem}
+.row{display:flex;gap:.6rem;align-items:center;padding:.7rem .9rem;border:1px solid var(--line);border-radius:8px;background:var(--panel);margin-bottom:.5rem}.row .t{flex:1;min-width:0}.row small{color:var(--muted)}
+.tag{font-size:.75rem;padding:.05rem .5rem;border-radius:4px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);margin-right:.3rem}.tag.pv{background:color-mix(in srgb,var(--danger) 16%,transparent);color:var(--danger)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.8rem}.card{border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}.card img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#8884}.card div{padding:.6rem .8rem}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);width:min(94vw,720px);padding:1.2rem;max-height:92vh}dialog::backdrop{background:rgba(5,10,25,.6)}
+form .f{margin-bottom:.7rem}form label{display:block;font-size:.82rem;color:var(--muted);margin-bottom:.2rem}form .two{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}.acts{display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem}
+@media(max-width:560px){form .two{grid-template-columns:1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<div class="top"><h1>Admin: Personal Digital Identity</h1><div><button id="undo">Urungkan perubahan terakhir</button> <button class="p" id="export">Ekspor untuk website</button></div></div>
+<div class="note">Data privat dan rahasia hanya tersimpan di browser ini (IndexedDB), tidak ada di <code>index.html</code>. Buka file ini dari komputermu, ubah data, lalu klik <b>Ekspor untuk website</b>. Hasilnya <code>website-update.zip</code> (data.js + foto) berisi <b>hanya entri publik</b>; ekstrak dan unggah ke repo GitHub. Buat cadangan lewat tab Cadangan secara berkala.</div>
+<div class="tabs" id="tabs"></div><div id="view"></div>
+
+<dialog id="di"><form id="fi" method="dialog"><h2 id="dt"></h2><div id="ff"></div><div class="acts"><button type="button" id="ic">Batal</button><button class="p" type="submit">Simpan</button></div></form></dialog>
+<dialog id="dg"><form id="fg" method="dialog"><h2>Foto galeri</h2><div id="gf"></div><div class="acts"><button type="button" id="gc">Batal</button><button class="p" type="submit">Simpan</button></div></form></dialog>
+</div>
+<script src="data.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const db=new Promise(r=>{const q=indexedDB.open('fiqar-site',1);q.onupgradeneeded=()=>{q.result.createObjectStore('kv');q.result.createObjectStore('img')};q.onsuccess=()=>r(q.result)});
+const tx=async(st,m,fn)=>{const d=await db;return new Promise((res,rej)=>{const r=fn(d.transaction(st,m).objectStore(st));r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})};
+const kvGet=k=>tx('kv','readonly',s=>s.get(k)),kvSet=(k,v)=>tx('kv','readwrite',s=>s.put(v,k));
+const imgGet=k=>tx('img','readonly',s=>s.get(k)),imgSet=(k,b)=>tx('img','readwrite',s=>s.put(b,k)),imgKeys=()=>tx('img','readonly',s=>s.getAllKeys()),imgDel=k=>tx('img','readwrite',s=>s.delete(k));
+const CAT=['education','work','org','project','learning','goal'],VIS=['public','private','confidential'],GCAT=['sertifikat','kerja','lainnya'];
+let S,tab='items',q='',fcat='';
+const save=async fn=>{await kvSet('prev',JSON.stringify(S));fn();await kvSet('site',S);draw()};
+const dl=(n,b)=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),800)};
+const lines=v=>v.split('\n').map(x=>x.trim()).filter(Boolean);
+
+/* form helper */
+const fld=(n,l,t,o,v)=>`<div class="f"><label>${l}</label>${t==='sel'?`<select name="${n}">${o.map(x=>`<option ${x===v?'selected':''}>${x}</option>`).join('')}</select>`:t==='ta'?`<textarea name="${n}">${esc(v)}</textarea>`:t==='chk'?`<input type="checkbox" name="${n}" ${v?'checked':''} style="width:auto"> Ya`:`<input name="${n}" value="${esc(v)}">`}</div>`;
+const two=(a,b)=>`<div class="two">${a}${b}</div>`;
+
+/* TERJEMAHAN: satu set isian, pilih bahasa lewat dropdown */
+const LANGS=[['en','English'],['ja','日本語'],['zh-CN','简体中文'],['zh-TW','繁體中文']];
+let TR={},TL='en',TK=[];
+const trUI=(keys,labels)=>{TK=keys;return `<div class="f"><label>Terjemahan ke bahasa</label><select name="tl">${LANGS.map(([c,n])=>`<option value="${c}">${n}</option>`).join('')}</select></div>`+keys.map((k,i)=>fld(k+'_t',labels[i][0],labels[i][1],0,'')).join('')};
+const trStore=f=>{TR[TL]=Object.fromEntries(TK.map(k=>[k,f[k+'_t'].value]))};
+const trLoad=f=>TK.forEach(k=>f[k+'_t'].value=TR[TL]?.[k]??'');
+const trInit=(f,o)=>{TR={};TL='en';LANGS.forEach(([c])=>{const e=o?.[c];if(e)TR[c]=Object.fromEntries(TK.map(k=>[k,Array.isArray(e[k])?e[k].join('\n'):e[k]||'']))});f.tl.value='en';trLoad(f);f.tl.onchange=()=>{trStore(f);TL=f.tl.value;trLoad(f)}};
+const trOut=f=>{trStore(f);const r={};for(const [c] of LANGS){const e={};for(const k of TK){let x=(TR[c]?.[k]||'').trim();if(k==='list')x=lines(x);if(x&&x.length)e[k]=x}if(Object.keys(e).length)r[c]=e}return r};
+
+/* ENTRI */
+let cur=null;
+function openItem(id){
+  cur=S.items.find(i=>i.id===id)||null;const i=cur||{cat:'work',vis:'public',type:'fact',ver:'ok'};
+  $('#dt').textContent=cur?'Ubah entri':'Tambah entri';
+  $('#ff').innerHTML=two(fld('cat','Kategori','sel',CAT,i.cat),fld('vis','Visibilitas','sel',VIS,i.vis))+two(fld('type','Jenis (fact = sudah terjadi, plan = rencana)','sel',['fact','plan'],i.type),fld('ver','Verifikasi (review = perlu dicek)','sel',['ok','review'],i.ver))
+   +two(fld('start','Mulai (YYYY, YYYY-MM, atau YYYY-MM-DD)','in',0,i.start),fld('end','Selesai (kosong jika berjalan)','in',0,i.end))+fld('now','Masih berjalan','chk',0,i.now)
+   +fld('org','Organisasi / institusi (Indonesia)','in',0,i.org)+fld('title','Judul (Indonesia)','in',0,i.title)+fld('status','Status (Indonesia)','in',0,i.status)
+   +fld('desc','Deskripsi (Indonesia)','ta',0,i.desc)+fld('list','Poin-poin (Indonesia), satu per baris','ta',0,(i.list||[]).join('\n'))+fld('tags','Tag (pisahkan dengan koma)','in',0,(i.tags||[]).join(', '))
+   +'<h2>Terjemahan</h2>'+trUI(['title','org','status','desc','list'],[['Judul','in'],['Organisasi','in'],['Status','in'],['Deskripsi','ta'],['Poin-poin, satu per baris','ta']]);
+  trInit($('#fi').elements,i);$('#di').showModal();
+}
+$('#fi').onsubmit=async ev=>{
+  const f=ev.target.elements,v=k=>f[k].value.trim();
+  if(!v('title')){alert('Judul wajib diisi.');ev.preventDefault();return}
+  for(const k of['start','end'])if(v(k)&&!/^\d{4}(-\d{2}(-\d{2})?)?$/.test(v(k))){alert('Format tanggal: YYYY, YYYY-MM, atau YYYY-MM-DD.');ev.preventDefault();return}
+  const o={id:cur?.id||'i'+Date.now().toString(36),cat:v('cat'),vis:v('vis'),type:v('type'),ver:v('ver'),title:v('title'),org:v('org'),start:v('start'),end:v('end'),now:f.now.checked,status:v('status'),desc:v('desc'),list:lines(f.list.value),tags:v('tags').split(',').map(x=>x.trim()).filter(Boolean)};
+  Object.assign(o,trOut(f));
+  Object.keys(o).forEach(k=>(o[k]===''||o[k]===false||(Array.isArray(o[k])&&!o[k].length&&k!=='tags'))&&delete o[k]);
+  await save(()=>{const n=S.items.findIndex(i=>i.id===o.id);n<0?S.items.push(o):S.items[n]=o});
+};
+$('#ic').onclick=()=>$('#di').close();
+
+/* GALERI */
+let gcur=null;
+function openGal(id){
+  gcur=S.gallery.find(g=>g.id===id)||null;const g=gcur||{cat:'sertifikat',vis:'public'};
+  $('#gf').innerHTML=`<div class="f"><label>Foto ${gcur?'(kosongkan jika tidak diganti)':''}</label><input type="file" name="file" accept="image/*"></div>`
+   +two(fld('cat','Kategori','sel',GCAT,g.cat),fld('vis','Visibilitas','sel',VIS,g.vis))+fld('title','Judul (Indonesia)','in',0,g.title)+fld('cap','Keterangan (Indonesia)','in',0,g.cap)
+   +'<h2>Terjemahan</h2>'+trUI(['title','cap'],[['Judul','in'],['Keterangan','in']])
+   +'<p class="note">Foto otomatis dikecilkan (maks 1600 px, WebP) dan data lokasi/EXIF dihapus. Untuk sertifikat, tutup dulu nomor dan data pribadi sebelum mengunggah.</p>';
+  trInit($('#fg').elements,g);$('#dg').showModal();
+}
+async function shrink(f){const bm=await createImageBitmap(f),k=Math.min(1,1600/Math.max(bm.width,bm.height)),c=document.createElement('canvas');c.width=Math.round(bm.width*k);c.height=Math.round(bm.height*k);c.getContext('2d').drawImage(bm,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,'image/webp',.82))}
+$('#fg').onsubmit=async ev=>{
+  const f=ev.target.elements,v=k=>f[k].value.trim(),file=f.file.files[0];
+  if(!v('title')||(!gcur&&!file)){alert('Judul dan foto wajib diisi.');ev.preventDefault();return}
+  let src=gcur?.src;
+  if(file){const slug=v('title').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'foto';const np=`images/${v('cat')}/${slug}-${Math.random().toString(36).slice(2,6)}.webp`;await imgSet(np,await shrink(file));if(src)await imgDel(src);src=np}
+  const o={id:gcur?.id||'g'+Date.now().toString(36),cat:v('cat'),vis:v('vis'),src,title:v('title'),cap:v('cap')};Object.assign(o,trOut(f));if(!o.cap)delete o.cap;
+  await save(()=>{const n=S.gallery.findIndex(g=>g.id===o.id);n<0?S.gallery.push(o):S.gallery[n]=o});
+};
+$('#gc').onclick=()=>$('#dg').close();
+
+/* VIEW */
+const vt=v=>`<span class="tag ${v==='public'?'':'pv'}">${v}</span>`;
+async function draw(){
+  $('#tabs').innerHTML=[['items','Entri'],['gal','Galeri'],['prof','Profil'],['bak','Cadangan']].map(([k,l])=>`<button data-t="${k}" aria-pressed="${k===tab}">${l}</button>`).join('');
+  const V=$('#view');
+  if(tab==='items'){
+    const r=S.items.filter(i=>(!fcat||i.cat===fcat)&&(!q||JSON.stringify(i).toLowerCase().includes(q))).sort((a,b)=>(b.start||'').localeCompare(a.start||''));
+    V.innerHTML=`<div class="top"><div style="display:flex;gap:.5rem;flex:1"><input id="sq" placeholder="Cari..." value="${esc(q)}"><select id="sc" style="max-width:11rem"><option value="">Semua</option>${CAT.map(c=>`<option ${c===fcat?'selected':''}>${c}</option>`).join('')}</select></div><button class="p" data-a="add">Tambah entri</button></div>`
+     +(r.map(i=>`<div class="row"><div class="t"><b>${esc(i.title)}</b><br><small>${vt(i.vis)}<span class="tag">${i.cat}</span> ${esc([i.org,i.start&&i.start+(i.end?' – '+i.end:i.now?' – sekarang':'')].filter(Boolean).join(' | '))}</small></div><button data-a="edit" data-id="${i.id}">Ubah</button><button class="d" data-a="del" data-id="${i.id}">Hapus</button></div>`).join('')||'<p>Belum ada entri.</p>');
+    $('#sq').oninput=e=>{q=e.target.value.toLowerCase();draw().then(()=>{const s=$('#sq');s.focus();s.setSelectionRange(1e3,1e3)})};$('#sc').onchange=e=>{fcat=e.target.value;draw()};
+  }else if(tab==='gal'){
+    V.innerHTML=`<div class="top"><span class="note" style="margin:0">Sertifikat dan dokumentasi kerja. Hanya yang berstatus public tampil di website.</span><button class="p" data-a="gadd">Tambah foto</button></div><div class="grid">${S.gallery.map(g=>`<div class="card"><img data-s="${esc(g.src)}" alt=""><div><b>${esc(g.title)}</b><br><small>${vt(g.vis)}<span class="tag">${g.cat}</span></small><br><button data-a="gedit" data-id="${g.id}">Ubah</button> <button class="d" data-a="gdel" data-id="${g.id}">Hapus</button></div></div>`).join('')||'<p>Belum ada foto.</p>'}</div>`;
+    for(const im of V.querySelectorAll('img[data-s]')){const b=await imgGet(im.dataset.s);im.src=b?URL.createObjectURL(b):im.dataset.s}
+  }else if(tab==='prof'){
+    const P=S.profile;V.innerHTML=`<form id="fp">${two(fld('name','Nama','in',0,P.name),fld('email','Email','in',0,P.email))+two(fld('github','GitHub (URL)','in',0,P.github),fld('linkedin','LinkedIn (URL)','in',0,P.linkedin))}<button class="p">Simpan profil</button></form><p class="note" style="margin-top:1rem">Jangan isi NIK, alamat, nomor rekening, atau nomor telepon di sini jika datanya akan diekspor ke website.</p>`;
+    $('#fp').onsubmit=e=>{e.preventDefault();const f=e.target.elements;save(()=>S.profile={name:f.name.value.trim(),email:f.email.value.trim(),github:f.github.value.trim(),linkedin:f.linkedin.value.trim()})};
+  }else V.innerHTML=`<h2>Cadangan dan pemulihan</h2><p class="note">Cadangan berisi semua data termasuk entri privat dan foto. Simpan di tempat aman dan jangan diunggah ke repo publik.</p><button class="p" data-a="bak">Unduh cadangan (.json)</button> <label class="b" style="display:inline-block">Pulihkan dari cadangan<input type="file" id="rs" accept=".json" hidden></label><p style="margin-top:1rem;color:var(--muted)">Total: ${S.items.length} entri, ${S.gallery.length} foto. Publik: ${S.items.filter(i=>i.vis==='public').length} entri, ${S.gallery.filter(g=>g.vis==='public').length} foto.</p>`;
+  if($('#rs'))$('#rs').onchange=restore;
+}
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('button');if(!b)return;const a=b.dataset.a,id=b.dataset.id;
+  if(b.dataset.t){tab=b.dataset.t;draw()}
+  else if(a==='add')openItem();else if(a==='edit')openItem(id);
+  else if(a==='del'){if(confirm('Hapus entri ini? Kamu bisa mengurungkannya dengan tombol "Urungkan".'))save(()=>S.items=S.items.filter(i=>i.id!==id))}
+  else if(a==='gadd')openGal();else if(a==='gedit')openGal(id);
+  else if(a==='gdel'){if(confirm('Hapus foto ini dari daftar?'))save(()=>S.gallery=S.gallery.filter(g=>g.id!==id))}
+  else if(a==='bak')backup();
+});
+$('#undo').onclick=async()=>{const p=await kvGet('prev');if(!p)return alert('Belum ada perubahan untuk diurungkan.');S=JSON.parse(p);await kvSet('site',S);await kvSet('prev',null);draw()};
+
+/* EKSPOR, CADANGAN */
+$('#export').onclick=async()=>{
+  if(!window.JSZip)return alert('JSZip gagal dimuat (perlu internet saat ekspor).');
+  const pub={profile:S.profile,items:S.items.filter(i=>i.vis==='public'),gallery:S.gallery.filter(g=>g.vis==='public')},z=new JSZip();let miss=0;
+  z.file('data.js','window.SITE='+JSON.stringify(pub,null,1)+';');
+  for(const g of pub.gallery){const b=await imgGet(g.src);b?z.file(g.src,b):miss++}
+  dl('website-update.zip',await z.generateAsync({type:'blob'}));
+  if(miss)alert(miss+' foto tidak ada di browser ini (mungkin sudah ada di repo). Berkas foto lama di repo tidak perlu diganti.');
+};
+const rd=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});
+async function backup(){const im={};for(const k of await imgKeys())im[k]=await rd(await imgGet(k));dl('backup-'+new Date().toISOString().slice(0,10)+'.json',new Blob([JSON.stringify({site:S,images:im})],{type:'application/json'}))}
+async function restore(e){const f=e.target.files[0];if(!f||!confirm('Pulihkan akan mengganti semua data di browser ini. Lanjutkan?'))return;
+  try{const d=JSON.parse(await f.text());await save(()=>S=d.site);for(const[k,u] of Object.entries(d.images||{}))await imgSet(k,await (await fetch(u)).blob());draw();alert('Pemulihan selesai.')}catch(x){alert('Berkas cadangan tidak valid.')}}
+
+(async()=>{S=await kvGet('site')||structuredClone(window.SITE||{});S.items??=[];S.gallery??=[];S.profile??={};draw()})();
+</script>
+</body>
+</html>
